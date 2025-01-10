@@ -268,7 +268,7 @@ class TrajectoryCalc:
         return min(step, preferred_step) / 2.0
 
     def trajectory(self, shot_info: Shot, max_range: Distance, dist_step: Distance,
-                   extra_data: bool = False, time_step: float = 0.0):
+                   extra_data: bool = False, time_step: float = 0.0) -> List[TrajectoryData]:
         filter_flags = TrajFlag.RANGE
 
         if extra_data:
