@@ -1,29 +1,27 @@
-from abc import ABC
-from typing import TypeVar, Protocol
+from abc import ABC, abstractmethod
+from typing import Generic, TypeVar
+from typing_extensions import TypedDict, List
 
-from typing_extensions import TypedDict, Generic, Dict
+from py_ballisticcalc import *  # Assuming this contains Shot, Distance, TrajectoryData, Angular
 
-# Define a generic type for Engine
-TEngine = TypeVar('TEngine', bound='BaseEngine')
-TConfigDict = TypeVar('TConfigDict', bound=Dict)
+# Define a base configuration type
+class BaseConfig(TypedDict, total=False):
+    pass  # Base class for all configurations
 
+# Define engines and their configurations as `TypeVar` pairs
+TConfigDict = TypeVar("TConfigDict", bound=BaseConfig)
 
-# Define the TypedDict for configuration
-class BaseEngineConfigDict(TypedDict, Generic[TConfigDict]):
-    # config_param: str  # Common field, can be overridden or extended by specific engine configs
-    pass
-
-
-# Define the BaseEngineConfig abstract base class
-# Define the BaseEngineConfig protocol (interface)
-class BaseEngineConfig(Protocol[TConfigDict]):
-
-    @staticmethod
-    def from_dict(d: TConfigDict) -> 'BaseEngineConfig':
+# Base engine class
+class BaseEngine(ABC, Generic[TConfigDict]):
+    @abstractmethod
+    def __init__(self, config: TConfigDict) -> None:
         pass
 
+    @abstractmethod
+    def trajectory(self, shot_info: Shot, max_range: Distance, dist_step: Distance,
+                   extra_data: bool = False, time_step: float = 0.0) -> List[TrajectoryData]:
+        pass
 
-# Define the BaseEngine abstract class
-class BaseEngine(ABC):
-    def __init__(self, config: BaseEngineConfig) -> None:
-        self.config = config
+    @abstractmethod
+    def zero_angle(self, shot_info: Shot, distance: Distance) -> Angular:
+        pass

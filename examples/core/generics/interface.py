@@ -1,28 +1,19 @@
+from typing_extensions import Type, TypeVar, Optional, Generic
 from dataclasses import dataclass, field
-from typing import Type, TypeVar, List, Union
 
-# Define a generic type variable T, bound to BaseEngine
-TEngine = TypeVar('TEngine', bound='BaseEngine')
+from examples.core.generics.engine import BaseEngine, TConfigDict
 
+# Ensure TConfigDict is bound in the Interface class
+TEngine = TypeVar("TEngine", bound=BaseEngine)  # Engine type is bound to BaseEngine with TConfigDict
 
+# Interface class that expects an engine and config
 @dataclass
-class Interface:
-    _engine: Type[TEngine]  # This is the type of the engine class (e.g., ConcreteEngine)
-    _instance: TEngine = field(default=None, init=False)
+class Interface(Generic[TEngine[TConfigDict], TConfigDict]):
+    _engine: Type[TEngine]  # The class/type of a BaseEngine subclass
+    _instance: Optional[TEngine] = field(default=None, init=False)  # Instance of the engine
+    _config: TConfigDict  # Expected configuration for the engine
 
-    @property
-    def cdm(self) -> List['DragDataPoint']:
-        """returns custom drag function based on input data"""
-        return self._instance.table_data
+    def create_instance(self) -> None:
+        """Creates an instance of the engine with the provided config."""
+        self._instance = self._engine(self._config)  # Instantiate engine
 
-    def barrel_elevation_for_target(self, shot: 'Shot', target_distance: Union[float, 'Distance']) -> 'Angular':
-        ...
-
-    def set_weapon_zero(self, shot: 'Shot', zero_distance: Union[float, 'Distance']) -> 'Angular':
-        ...
-
-    def fire(self, shot: 'Shot', trajectory_range: Union[float, 'Distance'],
-             trajectory_step: Union[float, 'Distance'] = 0,
-             extra_data: bool = False,
-             time_step: float = 0.0) -> 'HitResult':
-        ...
