@@ -2,7 +2,7 @@
 # Copyright 2024 David Bookstaber (https://github.com/dbookstaber)
 
 [build-system]
-requires = ["setuptools", "wheel", 'cython']
+requires = ["setuptools", "wheel", 'cython', 'cymem']
 build-backend = "setuptools.build_meta"
 
 
@@ -49,7 +49,7 @@ where = ["."]
 include = ["py_ballisticcalc_exts*"]
 
 [project.optional-dependencies]
-dev = ['cython', 'build', 'setuptools', 'cibuildwheel']
+dev = ['cython', 'cymem', 'build', 'setuptools', 'cibuildwheel']
 
 [tool.cibuildwheel]
 before-all = "uname -a"

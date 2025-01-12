@@ -189,6 +189,7 @@ try:
     import py_ballisticcalc_exts  # type: ignore
     logger.debug("Binary modules found, running in binary mode")
 except ImportError as error:
+    print(error)
     import warnings
     warnings.warn("Library running in pure python mode. "
                   "For better performance install 'py_ballisticcalc.exts' binary package", UserWarning)

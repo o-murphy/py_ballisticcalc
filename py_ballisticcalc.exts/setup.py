@@ -35,6 +35,9 @@ extension_names = [
     "_early_bind_atmo",
     "_early_bind_config",
 ]
+# extensions = [
+#     'py_ballisticcalc_exts/*.pyx' for name in extension_names
+# ]
 
 extensions = [
     Extension('py_ballisticcalc_exts.' + name,

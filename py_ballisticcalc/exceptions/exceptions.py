@@ -86,3 +86,14 @@ class RangeError(RuntimeError):
         else:
             self.last_distance = None
         super().__init__(message)
+
+    def _raise_by_err_code(self, code: int, ranges: List['TrajectoryData']) -> None:
+        """Used only by cython"""
+        if code == 0:
+            return
+        if code == 1:
+            raise RangeError(RangeError.MinimumVelocityReached, ranges)
+        if code == 2:
+            raise RangeError(RangeError.MaximumDropReached, ranges)
+        if code == 3:
+            raise RangeError(RangeError.MinimumAltitudeReached, ranges)

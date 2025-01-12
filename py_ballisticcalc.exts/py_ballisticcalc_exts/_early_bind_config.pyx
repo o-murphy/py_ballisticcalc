@@ -1,5 +1,5 @@
 from cython cimport final
-
+# from py_ballisticcalc_exts._early_bind_config cimport _ConfigStruct  # require kinda including .h
 
 @final
 cdef _ConfigStruct _early_bind_config(object config):

@@ -7,6 +7,9 @@
 """
 
 from cython cimport final
+from cpython cimport array
+from cymem.cymem cimport Pool
+
 from libc.math cimport fabs, pow, sin, cos, tan, atan, atan2
 from py_ballisticcalc_exts.vector cimport Vector
 from py_ballisticcalc_exts.conditions cimport Wind, Shot, _WIND_MAX_DISTANCE_FEET
@@ -162,7 +165,7 @@ cdef class TrajectoryCalc:
         object ammo
         double _bc
         list _table_data
-        list[CurvePoint] _curve
+        CurvePoint* _curve
         Vector gravity_vector
         double look_angle
         double twist
@@ -179,7 +182,7 @@ cdef class TrajectoryCalc:
         double muzzle_velocity
         double stability_coefficient
 
-        list[double] __mach_list
+        double[:] __mach_list
         _ConfigStruct __config
 
     def __cinit__(TrajectoryCalc self, object ammo, object _config):
@@ -472,15 +475,23 @@ cdef double calculate_energy(double bullet_weight, double velocity):
 cdef double calculate_ogv(double bullet_weight, double velocity):
     return pow(bullet_weight, 2) * pow(velocity, 3) * 1.5e-12
 
-cdef list[CurvePoint] calculate_curve(list data_points):
+cdef CurvePoint* calculate_curve(list data_points):
+    """
+    using memoryview of structs (Pool) faster than python list
+    """
     cdef double rate, x1, x2, x3, y1, y2, y3, a, b, c
-    cdef list[CurvePoint] curve = []
     cdef CurvePoint curve_point
-    cdef int i, num_points, len_data_points, len_data_range
+    cdef int i, num_points, len_data_range
+
+    cdef int len_data_points = len(data_points)
+
+    cdef Pool mem = Pool()
+    cdef CurvePoint* curve = <CurvePoint*>mem.alloc(len_data_points, sizeof(CurvePoint))
 
     rate = (data_points[1].CD - data_points[0].CD) / (data_points[1].Mach - data_points[0].Mach)
-    curve = [CurvePoint(0, rate, data_points[0].CD - data_points[0].Mach * rate)]
-    len_data_points = len(data_points)
+    # curve = [CurvePoint(0, rate, data_points[0].CD - data_points[0].Mach * rate)]
+    curve[0] = CurvePoint(0, rate, data_points[0].CD - data_points[0].Mach * rate)
+    # len_data_points = len(data_points)
     len_data_range = len_data_points - 1
 
     for i in range(1, len_data_range):
@@ -495,55 +506,94 @@ cdef list[CurvePoint] calculate_curve(list data_points):
         b = (y2 - y1 - a * (x2 * x2 - x1 * x1)) / (x2 - x1)
         c = y1 - (a * x1 * x1 + b * x1)
         curve_point = CurvePoint(a, b, c)
-        curve.append(curve_point)
+        # curve.append(curve_point)
+        curve[i] = curve_point
 
     num_points = len_data_points
     rate = (data_points[num_points - 1].CD - data_points[num_points - 2].CD) / \
            (data_points[num_points - 1].Mach - data_points[num_points - 2].Mach)
     curve_point = CurvePoint(0, rate, data_points[num_points - 1].CD - data_points[num_points - 2].Mach * rate)
-    curve.append(curve_point)
+    # curve.append(curve_point)
+    curve[len_data_range] = curve_point
     return curve
 
-# use get_only_mach_data with calculate_by_curve_and_mach_data cause it faster
-cdef double calculate_by_curve(list data, list[CurvePoint] curve, double mach):
-    cdef int num_points, mlo, mhi, mid, m
-    cdef CurvePoint curve_m
+# cdef list[CurvePoint] calculate_curve(list data_points):
+#     cdef double rate, x1, x2, x3, y1, y2, y3, a, b, c
+#     cdef list[CurvePoint] curve = []
+#     cdef CurvePoint curve_point
+#     cdef int i, num_points, len_data_points, len_data_range
+#
+#     rate = (data_points[1].CD - data_points[0].CD) / (data_points[1].Mach - data_points[0].Mach)
+#     curve = [CurvePoint(0, rate, data_points[0].CD - data_points[0].Mach * rate)]
+#     len_data_points = len(data_points)
+#     len_data_range = len_data_points - 1
+#
+#     for i in range(1, len_data_range):
+#         x1 = data_points[i - 1].Mach
+#         x2 = data_points[i].Mach
+#         x3 = data_points[i + 1].Mach
+#         y1 = data_points[i - 1].CD
+#         y2 = data_points[i].CD
+#         y3 = data_points[i + 1].CD
+#         a = ((y3 - y1) * (x2 - x1) - (y2 - y1) * (x3 - x1)) / (
+#                 (x3 * x3 - x1 * x1) * (x2 - x1) - (x2 * x2 - x1 * x1) * (x3 - x1))
+#         b = (y2 - y1 - a * (x2 * x2 - x1 * x1)) / (x2 - x1)
+#         c = y1 - (a * x1 * x1 + b * x1)
+#         curve_point = CurvePoint(a, b, c)
+#         curve.append(curve_point)
+#
+#     num_points = len_data_points
+#     rate = (data_points[num_points - 1].CD - data_points[num_points - 2].CD) / \
+#            (data_points[num_points - 1].Mach - data_points[num_points - 2].Mach)
+#     curve_point = CurvePoint(0, rate, data_points[num_points - 1].CD - data_points[num_points - 2].Mach * rate)
+#     curve.append(curve_point)
+#     return curve
 
-    num_points = len(curve)
-    mlo = 0
-    mhi = num_points - 2
+# # use get_only_mach_data with calculate_by_curve_and_mach_data cause it faster
+# cdef double calculate_by_curve(list data, list[CurvePoint] curve, double mach):
+#     cdef int num_points, mlo, mhi, mid, m
+#     cdef CurvePoint curve_m
+#
+#     num_points = len(curve)
+#     mlo = 0
+#     mhi = num_points - 2
+#
+#     while mhi - mlo > 1:
+#         mid = (mhi + mlo) // 2
+#         if data[mid].Mach < mach:
+#             mlo = mid
+#         else:
+#             mhi = mid
+#
+#     if data[mhi].Mach - mach > mach - data[mlo].Mach:
+#         m = mlo
+#     else:
+#         m = mhi
+#     curve_m = curve[m]
+#     return curve_m.c + mach * (curve_m.b + curve_m.a * mach)
 
-    while mhi - mlo > 1:
-        mid = (mhi + mlo) // 2
-        if data[mid].Mach < mach:
-            mlo = mid
-        else:
-            mhi = mid
 
-    if data[mhi].Mach - mach > mach - data[mlo].Mach:
-        m = mlo
-    else:
-        m = mhi
-    curve_m = curve[m]
-    return curve_m.c + mach * (curve_m.b + curve_m.a * mach)
-
-cdef list[double] _get_only_mach_data(list data):
+cdef double[:] _get_only_mach_data(list data):
     cdef int data_len = len(data)
-    cdef list[double] result = []  # [.0] * data_len # Preallocate the list to avoid resizing during appending
-    cdef int i
-    cdef object dp  # Assuming dp is an object with a Mach attribute
+    cdef array.array arr = array.array('d', [0.0] * data_len)
+    cdef object dp
 
+    cdef double[:] result = arr
     for i in range(data_len):
-        dp = data[i]  # Direct indexing is more efficient than using `PyList_GET_ITEM`
-        result.append(dp.Mach)  # result[i] = dp.Mach # Directly assign the value to the pre-allocated result list
-
+        dp = data[i]
+        result[i] = dp.Mach
     return result
 
-cdef double _calculate_by_curve_and_mach_list(list[double] mach_list, list[CurvePoint] curve, double mach):
+cdef double _calculate_by_curve_and_mach_list(double[:] mach_list, CurvePoint* curve, double mach):
     cdef int num_points, mlo, mhi, mid, m
     cdef CurvePoint curve_m
 
-    num_points = len(curve)
+    # num_points = len(curve)
+    # mach_list.shape[0] returns len of memoryview
+    # we use shape because we know len(mach_list) == len(*curve)
+    # but we can't get len of pointer
+    # num_points = len(mach_list)
+    num_points = mach_list.shape[0]
     mlo = 0
     mhi = num_points - 2
 
