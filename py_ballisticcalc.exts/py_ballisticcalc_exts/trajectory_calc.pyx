@@ -215,6 +215,7 @@ cdef class TrajectoryCalc:
                    bint extra_data = False, double time_step = 0.0) -> Type[list[TrajectoryData]]:
         cdef:
             CTrajFlag filter_flags = CTrajFlag.RANGE
+            int err = 0
 
         dist_step = PreferredUnits.distance(dist_step)  #  was unused there ???
 
@@ -223,7 +224,10 @@ cdef class TrajectoryCalc:
             filter_flags = CTrajFlag.ALL
 
         self._init_trajectory(shot_info)
-        return self._trajectory(shot_info, max_range._feet, dist_step._feet, filter_flags, time_step)
+        cdef list[TrajectoryData] t = self._trajectory(shot_info, max_range._feet, dist_step._feet, filter_flags, &err, time_step)
+        if err > 0:
+            RangeError._raise_by_err_code(err, t)
+        return t
 
     cdef void _init_trajectory(self, Shot shot_info):
         self.look_angle = shot_info.look_angle._rad
@@ -261,6 +265,9 @@ cdef class TrajectoryCalc:
             object t
             double height
 
+        cdef:
+            int err = 0
+
         self._init_trajectory(shot_info)
         self.barrel_azimuth = 0.0
         self.barrel_elevation = atan(height_at_zero / zero_distance)
@@ -269,7 +276,9 @@ cdef class TrajectoryCalc:
 
         # x = horizontal distance down range, y = drop, z = windage
         while zero_finding_error > _cZeroFindingAccuracy and iterations_count < _cMaxIterations:
-            t = self._trajectory(shot_info, maximum_range, zero_distance, CTrajFlag.NONE)[0]
+            t = self._trajectory(shot_info, maximum_range, zero_distance, CTrajFlag.NONE, &err)[0]
+            if err > 0:
+                RangeError._raise_by_err_code(err, t)
             height = t.height._feet  # use there internal shortcut instead of (t.height >> Distance.Foot)
             zero_finding_error = fabs(height - height_at_zero)
             if zero_finding_error > _cZeroFindingAccuracy:
@@ -282,7 +291,8 @@ cdef class TrajectoryCalc:
         return Angular.Radian(self.barrel_elevation)
 
     cdef list[TrajectoryData] _trajectory(TrajectoryCalc self, Shot shot_info,
-                          double maximum_range, double step, int filter_flags, double time_step = 0.0):
+                          double maximum_range, double step,
+                          int filter_flags, int *err, double time_step = 0.0):
         cdef:
             double velocity, delta_time
             double density_factor = .0
@@ -368,12 +378,12 @@ cdef class TrajectoryCalc:
                     or self.alt0 + range_vector._y < _cMinimumAltitude
             ):
                 if velocity < _cMinimumVelocity:
-                    reason = RangeError.MinimumVelocityReached
+                    err[0] = 1
                 elif range_vector._y < _cMaximumDrop:
-                    reason = RangeError.MaximumDropReached
+                    err[0] = 2
                 else:
-                    reason = RangeError.MinimumAltitudeReached
-                raise RangeError(reason, ranges)
+                    err[0] = 3
+                break
             #endregion
 
         #endregion

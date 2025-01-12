@@ -68,6 +68,7 @@ class RangeError(RuntimeError):
     MinimumVelocityReached: str = "Minimum velocity reached"
     MaximumDropReached: str = "Maximum drop reached"
     MinimumAltitudeReached: str = "Minimum altitude reached"
+    UndefinedError: str = "Undefined error"
 
     def __init__(self, reason: str, ranges: List['TrajectoryData']):
         """
@@ -87,7 +88,8 @@ class RangeError(RuntimeError):
             self.last_distance = None
         super().__init__(message)
 
-    def _raise_by_err_code(self, code: int, ranges: List['TrajectoryData']) -> None:
+    @staticmethod
+    def _raise_by_err_code(code: int, ranges: List['TrajectoryData']) -> None:
         """Used only by cython"""
         if code == 0:
             return
@@ -97,3 +99,5 @@ class RangeError(RuntimeError):
             raise RangeError(RangeError.MaximumDropReached, ranges)
         if code == 3:
             raise RangeError(RangeError.MinimumAltitudeReached, ranges)
+        if code == -1:
+            raise RangeError(RangeError.UndefinedError, ranges)
