@@ -1,9 +1,9 @@
 import logging
-import sys
 import warnings
 from concurrent import futures
 
-from aerial_target.aerial_target import AerialTarget
+from aerial_target import AerialTarget
+
 from py_ballisticcalc import *
 
 logger.setLevel(logging.DEBUG)
@@ -63,12 +63,14 @@ dm = DragModel(0.62, TableG1, 661, 0.51, 2.3)
 ammo = Ammo(dm, 900)
 zero_atmo = Atmo(altitude=150, pressure=1000, temperature=15, humidity=50)
 
-for look_angle in range(20, 21, 10):
+# for look_angle in range(20, 21, 10):
+for look_angle in range(20, 21, 2):
     target.look_angle = Angular.Degree(look_angle)
     points = []
     adjusted_points = []
 
     for direction in range(0, 181, 30):
+    # for direction in range(60, 61, 2):
         target.direction_from = Angular.Degree(direction)
         target._prepare()
 

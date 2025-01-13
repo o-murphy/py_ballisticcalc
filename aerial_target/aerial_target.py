@@ -143,13 +143,15 @@ class AerialTarget:
                         weapon=weapon,
                         ammo=ammo,
                         atmo=zero_atmo)
-            shot_result = calc.fire(shot, Unit.Foot((distance >> Unit.Foot) + 0.1), distance)
+            to_range = Unit.Foot((distance >> Unit.Foot) + 0.1)
+            shot_result = calc.fire(shot, to_range, distance)
             return shot_result
 
-        shot_result = get_trajectory_for_look_angle(
+        hit = get_trajectory_for_look_angle(
             Unit.Foot(self._prepared.look_distance_ft * math.cos(self._prepared.look_angle_rad)),
             Unit.Radian(self._prepared.look_angle_rad)
-        )[-1]
+        )
+        shot_result = hit[-1]
         _, pos = self.at_time(shot_result.time)
 
         if not adjust:
@@ -184,9 +186,10 @@ class AerialTarget:
         while True:
             initial_distance_ft += distance_delta_ft
             initial_look_angle_rad += look_angle_delta_rad
-            shot_result = get_trajectory_for_look_angle(
+            hit = get_trajectory_for_look_angle(
                 Unit.Foot(initial_distance_ft), Unit.Radian(initial_look_angle_rad)
-            )[-1]
+            )
+            shot_result = hit[-1]
 
             _, pos_adjusted = self.at_time(shot_result.time)
 
