@@ -1,7 +1,7 @@
 from abc import abstractmethod, ABC
+from dataclasses import dataclass, field
 
 from typing_extensions import TypeVar, Generic, List, Union
-from dataclasses import dataclass, field
 
 from examples.core.generics.engine import BaseEngine, TConfigDict
 from py_ballisticcalc import *
@@ -20,10 +20,11 @@ class Interface(ABC, Generic[TEngine, TConfigDict]):
             self._engine = BaseEngine()
 
     @abstractmethod
-    def reload(self, ammo: Ammo) -> None:
+    def reload(self, ammo: Ammo,  engine: TEngine = None, config: TConfigDict = None) -> None:
         pass
 
     @property
+    @abstractmethod
     def cdm(self) -> List[DragDataPoint]:
         pass
 

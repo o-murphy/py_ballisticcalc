@@ -1,19 +1,24 @@
-# Example
+"""
+Now this module just a placeholder for future RK4 method
+It's not the realisation of MethodRKEngine
+"""
 from typing_extensions import List, Optional
 
 from examples.core.generics.engine import BaseConfig, BaseEngine
 from py_ballisticcalc import *
+
 
 # Concrete Engine classes (for example, Euler and RK methods)
 class MethodRKConfig(BaseConfig):
     step_size: float
     accuracy: float
 
+
 class MethodRKEngine(BaseEngine[MethodRKConfig]):
     def __init__(self, config: Optional[MethodRKConfig] = None) -> None:
         self._config = config
 
-    def reload(self, ammo: Ammo) -> None:
+    def reload(self, ammo: Ammo, config: MethodRKConfig = None) -> None:
         """Method to init ammo"""
         pass
 

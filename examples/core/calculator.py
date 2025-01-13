@@ -1,4 +1,12 @@
-from dataclasses import dataclass, field
+"""
+Calculator implements generics.Interface to make it universal
+It can be used with different implementations of engines (Calculation methods)
+Custom engine should be a subclass of BaseEngine
+It uses MethodEulerEngine by default if no other engine chosen yet
+"""
+
+from dataclasses import dataclass
+
 from typing_extensions import Generic, List, Union
 
 from examples.core.generics.interface import Interface, TEngine, TConfigDict
@@ -14,7 +22,11 @@ class Calculator(Interface[TEngine, TConfigDict], Generic[TEngine, TConfigDict])
         if self._engine is None:
             self._engine = MethodEulerEngine()
 
-    def reload(self, ammo: Ammo) -> None:
+    def reload(self, ammo: Ammo, engine: TEngine = None, config: TConfigDict = None) -> None:
+        if engine:
+            self._engine = engine(config)
+        elif config:
+            self._engine = self._engine.__class__(config)
         self._engine.reload(ammo)
 
     @property
@@ -22,7 +34,7 @@ class Calculator(Interface[TEngine, TConfigDict], Generic[TEngine, TConfigDict])
         return self._engine.table_data
 
     def barrel_elevation_for_target(self, shot: Shot, target_distance: Union[float, Distance]) -> Angular:
-        self._engine.reload(shot.ammo)
+        self._engine.reload(shot.ammo, config=self._engine._config)
         target_distance = PreferredUnits.distance(target_distance)
         total_elevation = self._engine.zero_angle(shot, target_distance)
         return Angular.Radian(
@@ -41,10 +53,9 @@ class Calculator(Interface[TEngine, TConfigDict], Generic[TEngine, TConfigDict])
         if not trajectory_step:
             trajectory_step = trajectory_range.unit_value / 10.0
         step: Distance = PreferredUnits.distance(trajectory_step)
-        self._calc = self._engine.reload(shot.ammo)
+        self._engine.reload(shot.ammo, config=self._engine._config)
         data = self._engine.trajectory(shot, trajectory_range, step, extra_data, time_step)
         return HitResult(shot, data, extra_data)
-
 
 # """
 # Other approach to create custom interface
