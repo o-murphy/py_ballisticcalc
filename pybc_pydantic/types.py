@@ -139,22 +139,20 @@ if __name__ == '__main__':
             'humidity': 78
         },
 
-    })
+    }).to_obj()
 
     zero_distance = Distance.Meter(100)
 
     config: InterfaceConfigDict = {'use_powder_sensitivity': True}
     calc = Calculator(_config=config)
-    zero_elevation = calc.set_weapon_zero(zero.to_obj(), zero_distance)
+    zero_elevation = calc.set_weapon_zero(zero, zero_distance)
 
     shot = PydanticShot(
         **{
-            'weapon': weapon,
-            # 'weapon': {
-            #     'sight_height': weapon['sight_height'],
-            #     'twist': weapon['twist'],
-            #     zero_elevation: zero_elevation,
-            # },
+            'weapon': {
+                **weapon,
+                'zero_elevation': zero_elevation
+            },
             'ammo': ammo,
             'atmo': {
                 'altitude': Unit.Meter(150),
@@ -166,14 +164,6 @@ if __name__ == '__main__':
     )
 
     shot_result = calc.fire(shot.to_obj(), Distance.Meter(1000), extra_data=False)
-    # print(shot_result)
 
-
-    from examples.ukrop_338lm_300gr_smk import shot_result as reference, weapon as reference_weapon
-
-    print(reference_weapon)
-    print(PydanticWeapon(**weapon).to_obj())
-
-    # print(shot_result.trajectory[-1])
-    # print(reference.trajectory[-1])
-    # assert shot_result.trajectory[-1] == reference.trajectory[-1]
+    from examples.ukrop_338lm_300gr_smk import shot_result as reference
+    assert shot_result.trajectory[-1] == reference.trajectory[-1]
