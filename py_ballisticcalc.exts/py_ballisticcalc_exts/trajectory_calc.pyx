@@ -310,7 +310,7 @@ cdef class TrajectoryCalc:
         range_vector = Vector(.0, -self.cant_cosine * self.sight_height, -self.cant_sine * self.sight_height)
         velocity_vector = Vector(cos(self.barrel_elevation) * cos(self.barrel_azimuth),
                                  sin(self.barrel_elevation),
-                                 cos(self.barrel_elevation) * sin(self.barrel_azimuth)).mul_by_const(velocity)
+                                 cos(self.barrel_elevation) * sin(self.barrel_azimuth))._mul_by_const(velocity)
         # endregion
 
         # With non-zero look_angle, rounding can suggest multiple adjacent zero-crossings
@@ -347,16 +347,16 @@ cdef class TrajectoryCalc:
             #region Ballistic calculation step
             # use just cdef methods to
             # using .subtract .add instead of "/" better optimized by cython
-            velocity_adjusted = velocity_vector.subtract(wind_vector)
-            velocity = velocity_adjusted.magnitude()
+            velocity_adjusted = velocity_vector._subtract(wind_vector)
+            velocity = velocity_adjusted._magnitude()
             delta_time = self.calc_step / max(1.0, velocity)
             drag = density_factor * velocity * self.drag_by_mach(velocity / mach)
-            velocity_vector = velocity_vector.subtract(
-                (velocity_adjusted.mul_by_const(drag).subtract(self.gravity_vector)).mul_by_const(delta_time))
-            delta_range_vector = velocity_vector.mul_by_const(delta_time)
-            range_vector = range_vector.add(delta_range_vector)
-            velocity = velocity_vector.magnitude()
-            # time += delta_range_vector.magnitude() / velocity
+            velocity_vector = velocity_vector._subtract(
+                (velocity_adjusted._mul_by_const(drag)._subtract(self.gravity_vector))._mul_by_const(delta_time))
+            delta_range_vector = velocity_vector._mul_by_const(delta_time)
+            range_vector = range_vector._add(delta_range_vector)
+            velocity = velocity_vector._magnitude()
+            # time += delta_range_vector._magnitude() / velocity
             time += delta_time
 
             if (
