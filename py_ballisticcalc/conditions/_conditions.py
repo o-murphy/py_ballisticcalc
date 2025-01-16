@@ -9,7 +9,7 @@ from typing_extensions import List, Union, Optional, Tuple
 from py_ballisticcalc.munition import Weapon, Ammo
 from py_ballisticcalc.unit import Distance, Velocity, Temperature, Pressure, Angular, PreferredUnits
 from py_ballisticcalc.constants import *  # pylint: disable=wildcard-import,unused-wildcard-import
-from py_ballisticcalc.logger import logger
+
 
 __all__ = ('Atmo', 'Wind', 'Shot')
 
@@ -22,6 +22,7 @@ class Atmo:  # pylint: disable=too-many-instance-attributes
     pressure: Pressure
     temperature: Temperature
     humidity: float  # Relative humidity [0% to 100%]
+    powder_temp: Temperature
 
     density_ratio: float
     mach: Velocity
@@ -35,7 +36,8 @@ class Atmo:  # pylint: disable=too-many-instance-attributes
                  altitude: Optional[Union[float, Distance]] = None,
                  pressure: Optional[Union[float, Pressure]] = None,
                  temperature: Optional[Union[float, Temperature]] = None,
-                 humidity: float = 0.0):
+                 humidity: float = 0.0,
+                 powder_t: Optional[Union[float, Temperature]] = None):
 
         self.humidity = humidity or 0.0
         if self.humidity > 1:
@@ -46,6 +48,8 @@ class Atmo:  # pylint: disable=too-many-instance-attributes
         self.altitude = PreferredUnits.distance(altitude or 0)
         self.pressure = PreferredUnits.pressure(pressure or Atmo.standard_pressure(self.altitude))
         self.temperature = PreferredUnits.temperature(temperature or Atmo.standard_temperature(self.altitude))
+        # ensure that if powder_temperature are not provided we use atmospheric temperature
+        self.powder_temp = PreferredUnits.temperature(powder_t or self.temperature)
 
         self._t0 = self.temperature >> Temperature.Fahrenheit
         self._p0 = self.pressure >> Pressure.InHg
@@ -283,8 +287,4 @@ class Shot:
                                  + (self.relative_angle >> Angular.Radian)))
 
 
-try:
-    # replace with cython based implementation
-    from py_ballisticcalc_exts import Wind, Shot  # type: ignore
-except ImportError as err:
-    logger.debug(err)
+

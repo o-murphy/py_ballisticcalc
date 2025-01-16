@@ -4,75 +4,29 @@
 
 import math
 import warnings
-from typing_extensions import NamedTuple, Union, List, Final, Tuple
 
+from typing_extensions import NamedTuple, Union, List, Tuple
+
+from py_ballisticcalc.logger import logger
 from py_ballisticcalc.conditions import Atmo, Shot, Wind
 from py_ballisticcalc.drag_model import DragDataPoint
 from py_ballisticcalc.exceptions import ZeroFindingError, RangeError
 from py_ballisticcalc.munition import Ammo
 from py_ballisticcalc.trajectory_data import TrajectoryData, TrajFlag
-from py_ballisticcalc.unit import Distance, Angular, Velocity, Weight, Energy, Pressure, Temperature, PreferredUnits
+from py_ballisticcalc.unit import Distance, Angular, Velocity, Weight, Energy, Pressure, Temperature, Unit
 from py_ballisticcalc.vector import Vector
-from py_ballisticcalc.logger import logger
 
 __all__ = (
     'TrajectoryCalc',
     'Vector',
-    'get_global_max_calc_step_size',
-    'get_global_use_powder_sensitivity',
-    'set_global_max_calc_step_size',
-    'set_global_use_powder_sensitivity',
-    'reset_globals',
-    'cZeroFindingAccuracy',
-    'cMinimumVelocity',
-    'cMaximumDrop',
-    'cMaxIterations',
-    'cGravityConstant',
-    'cMinimumAltitude',
     'Config',
+    'calculate_energy',
+    'calculate_ogw',
+    'get_correction',
+    'create_trajectory_row',
+    '_TrajectoryDataFilter',
+    '_WindSock'
 )
-
-cZeroFindingAccuracy: Final[float] = 0.000005
-cMinimumVelocity: Final[float] = 50.0
-cMaximumDrop: Final[float] = -15000
-cMaxIterations: Final[int] = 20
-cGravityConstant: Final[float] = -32.17405
-cMinimumAltitude: Final[float] = -1410.748  # ft
-
-_globalChartResolution: float = 0.2  # ft
-_globalUsePowderSensitivity = False
-_globalMaxCalcStepSizeFeet: float = 0.5
-
-
-def get_global_max_calc_step_size() -> Distance:
-    return PreferredUnits.distance(Distance.Foot(_globalMaxCalcStepSizeFeet))
-
-
-def get_global_use_powder_sensitivity() -> bool:
-    return _globalUsePowderSensitivity
-
-
-def reset_globals() -> None:
-    # pylint: disable=global-statement
-    global _globalUsePowderSensitivity, _globalMaxCalcStepSizeFeet
-    _globalUsePowderSensitivity = False
-    _globalMaxCalcStepSizeFeet = 0.5
-
-
-def set_global_max_calc_step_size(value: Union[float, Distance]) -> None:
-    # pylint: disable=global-statement
-    global _globalMaxCalcStepSizeFeet
-    if (_value := PreferredUnits.distance(value)).raw_value <= 0:
-        raise ValueError("_globalMaxCalcStepSize have to be > 0")
-    _globalMaxCalcStepSizeFeet = _value >> Distance.Foot
-
-
-def set_global_use_powder_sensitivity(value: bool) -> None:
-    # pylint: disable=global-statement
-    global _globalUsePowderSensitivity
-    if not isinstance(value, bool):
-        raise TypeError(f"set_global_use_powder_sensitivity {value=} is not a boolean")
-    _globalUsePowderSensitivity = value
 
 
 class CurvePoint(NamedTuple):
@@ -84,7 +38,6 @@ class CurvePoint(NamedTuple):
 
 # Define the NamedTuple to match the config structure
 class Config(NamedTuple):
-    use_powder_sensitivity: bool
     max_calc_step_size_feet: float
     chart_resolution: float
     cZeroFindingAccuracy: float
@@ -103,6 +56,7 @@ class _TrajectoryDataFilter:
     ranges_length: int
     previous_mach: float
     next_range_distance: float
+    look_angle: float
 
     def __init__(self, filter_flags: Union[TrajFlag, int],
                  ranges_length: int, time_step: float = 0.0):
@@ -116,12 +70,14 @@ class _TrajectoryDataFilter:
         self.previous_mach: float = 0.0
         self.previous_time: float = 0.0
         self.next_range_distance: float = 0.0
+        self.look_angle: float = 0.0
 
     def setup_seen_zero(self, height: float, barrel_elevation: float, look_angle: float) -> None:
         if height >= 0:
             self.seen_zero |= TrajFlag.ZERO_UP
         elif height < 0 and barrel_elevation < look_angle:
             self.seen_zero |= TrajFlag.ZERO_DOWN
+        self.look_angle: float = look_angle
 
     def clear_current_flag(self):
         self.current_flag = TrajFlag.NONE
@@ -132,9 +88,8 @@ class _TrajectoryDataFilter:
                       velocity: float,
                       mach: float,
                       step: float,
-                      look_angle: float,
                       time: float) -> bool:
-        self.check_zero_crossing(range_vector, look_angle)
+        self.check_zero_crossing(range_vector)
         self.check_mach_crossing(velocity, mach)
         if self.check_next_range(range_vector.x, step):
             self.previous_time = time
@@ -169,12 +124,12 @@ class _TrajectoryDataFilter:
             self.current_flag |= TrajFlag.MACH
         self.previous_mach = current_mach
 
-    def check_zero_crossing(self, range_vector: Vector, look_angle: float):
+    def check_zero_crossing(self, range_vector: Vector):
         # Zero-crossing checks
 
         if range_vector.x > 0:
             # Zero reference line is the sight line defined by look_angle
-            reference_height = range_vector.x * math.tan(look_angle)
+            reference_height = range_vector.x * math.tan(self.look_angle)
             # If we haven't seen ZERO_UP, we look for that first
             if not (self.seen_zero & TrajFlag.ZERO_UP):  # pylint: disable=superfluous-parens
                 if range_vector.y >= reference_height:
@@ -242,7 +197,7 @@ class TrajectoryCalc:
 
     def __init__(self, ammo: Ammo, _config: Config):
         self.ammo: Ammo = ammo
-        self.__config: Config = _config
+        self._config: Config = _config
 
         self._bc: float = self.ammo.dm.BC
         self._table_data: List[DragDataPoint] = ammo.dm.drag_table
@@ -262,7 +217,7 @@ class TrajectoryCalc:
         :param step: proposed step size
         :return: step size for calculations (in feet)
         """
-        preferred_step = self.__config.max_calc_step_size_feet
+        preferred_step = self._config.max_calc_step_size_feet
         if step == 0:
             return preferred_step / 2.0
         return min(step, preferred_step) / 2.0
@@ -272,7 +227,7 @@ class TrajectoryCalc:
         filter_flags = TrajFlag.RANGE
 
         if extra_data:
-            dist_step = Distance.Foot(self.__config.chart_resolution)
+            dist_step = Distance.Foot(self._config.chart_resolution)
             filter_flags = TrajFlag.ALL
 
         self._init_trajectory(shot_info)
@@ -292,8 +247,8 @@ class TrajectoryCalc:
         self.cant_sine = math.sin(shot_info.cant_angle >> Angular.Radian)
         self.alt0 = shot_info.atmo.altitude >> Distance.Foot
         self.calc_step = self.get_calc_step()
-        if self.__config.use_powder_sensitivity:
-            self.muzzle_velocity = shot_info.ammo.get_velocity_for_temp(shot_info.atmo.temperature) >> Velocity.FPS
+        if shot_info.ammo.use_powder_sensitivity:
+            self.muzzle_velocity = shot_info.ammo.get_velocity_for_temp(shot_info.atmo.powder_temp) >> Velocity.FPS
         else:
             self.muzzle_velocity = shot_info.ammo.mv >> Velocity.FPS
         self.stability_coefficient = self.calc_stability_coefficient(shot_info.atmo)
@@ -306,8 +261,8 @@ class TrajectoryCalc:
         """
         self._init_trajectory(shot_info)
 
-        _cZeroFindingAccuracy = self.__config.cZeroFindingAccuracy
-        _cMaxIterations = self.__config.cMaxIterations
+        _cZeroFindingAccuracy = self._config.cZeroFindingAccuracy
+        _cMaxIterations = self._config.cMaxIterations
 
         distance_feet = distance >> Distance.Foot  # no need convert it twice
         zero_distance = math.cos(self.look_angle) * distance_feet
@@ -344,9 +299,9 @@ class TrajectoryCalc:
         :return: list of TrajectoryData, one for each dist_step, out to max_range
         """
 
-        _cMinimumVelocity = self.__config.cMinimumVelocity
-        _cMaximumDrop = self.__config.cMaximumDrop
-        _cMinimumAltitude = self.__config.cMinimumAltitude
+        _cMinimumVelocity = self._config.cMinimumVelocity
+        _cMaximumDrop = self._config.cMaximumDrop
+        _cMinimumAltitude = self._config.cMinimumAltitude
 
         ranges: List[TrajectoryData] = []  # Record of TrajectoryData points to return
         time: float = .0
@@ -380,7 +335,9 @@ class TrajectoryCalc:
 
         # region Trajectory Loop
         warnings.simplefilter("once")  # used to avoid multiple warnings in a loop
+        it = 0
         while range_vector.x <= maximum_range + self.calc_step:
+            it += 1
             data_filter.clear_current_flag()
 
             # Update wind reading at current point in trajectory
@@ -395,7 +352,7 @@ class TrajectoryCalc:
             if filter_flags:  # require check before call to improve performance
 
                 # Record TrajectoryData row
-                if data_filter.should_record(range_vector, velocity, mach, step, self.look_angle, time):
+                if data_filter.should_record(range_vector, velocity, mach, step, time):
                     ranges.append(create_trajectory_row(
                         time, range_vector, velocity_vector,
                         velocity, mach, self.spin_drift(time), self.look_angle,
@@ -444,6 +401,7 @@ class TrajectoryCalc:
                 time, range_vector, velocity_vector,
                 velocity, mach, self.spin_drift(time), self.look_angle,
                 density_factor, drag, self.weight, TrajFlag.NONE))
+        logger.debug(f"euler py it {it}")
         return ranges
 
     def drag_by_mach(self, mach: float) -> float:
@@ -538,22 +496,57 @@ def create_trajectory_row(time: float, range_vector: Vector, velocity_vector: Ve
 
     return TrajectoryData(
         time=time,
-        distance=Distance.Foot(range_vector.x),
-        velocity=Velocity.FPS(velocity),
+        distance=_new_feet(range_vector.x),
+        velocity=_new_fps(velocity),
         mach=velocity / mach,
-        height=Distance.Foot(range_vector.y),
-        target_drop=Distance.Foot((range_vector.y - range_vector.x * math.tan(look_angle)) * math.cos(look_angle)),
-        drop_adj=Angular.Radian(drop_adjustment - (look_angle if range_vector.x else 0)),
-        windage=Distance.Foot(windage),
-        windage_adj=Angular.Radian(windage_adjustment),
-        look_distance=Distance.Foot(range_vector.x / math.cos(look_angle)),
-        angle=Angular.Radian(trajectory_angle),
+        height=_new_feet(range_vector.y),
+        target_drop=_new_feet((range_vector.y - range_vector.x * math.tan(look_angle)) * math.cos(look_angle)),
+        drop_adj=_new_rad(drop_adjustment - (look_angle if range_vector.x else 0)),
+        windage=_new_feet(windage),
+        windage_adj=_new_rad(windage_adjustment),
+        look_distance=_new_feet(range_vector.x / math.cos(look_angle)),
+        angle=_new_rad(trajectory_angle),
         density_factor=density_factor - 1,
         drag=drag,
-        energy=Energy.FootPound(calculate_energy(weight, velocity)),
-        ogw=Weight.Pound(calculate_ogw(weight, velocity)),
+        energy=_new_ft_lb(calculate_energy(weight, velocity)),
+        ogw=_new_lb(calculate_ogw(weight, velocity)),
         flag=flag
     )
+
+
+def _new_feet(v: float):
+    d = object.__new__(Distance)
+    d._value = v * 12
+    d._defined_units = Unit.Foot
+    return d
+
+
+def _new_fps(v: float):
+    d = object.__new__(Velocity)
+    d._value = v / 3.2808399
+    d._defined_units = Unit.FPS
+    return d
+
+
+def _new_rad(v: float):
+    d = object.__new__(Angular)
+    d._value = v
+    d._defined_units = Unit.Radian
+    return d
+
+
+def _new_ft_lb(v: float):
+    d = object.__new__(Energy)
+    d._value = v
+    d._defined_units = Unit.FootPound
+    return d
+
+
+def _new_lb(v: float):
+    d = object.__new__(Weight)
+    d._value = v / 0.000142857143
+    d._defined_units = Unit.Pound
+    return d
 
 
 def get_correction(distance: float, offset: float) -> float:
@@ -667,12 +660,3 @@ def _calculate_by_curve_and_mach_list(mach_list: List[float], curve: List[CurveP
         m = mhi
     curve_m = curve[m]
     return curve_m.c + mach * (curve_m.b + curve_m.a * mach)
-
-
-try:
-    # replace with cython based implementation
-    # pylint: disable=reimported
-    from py_ballisticcalc_exts import TrajectoryCalc, Vector  # type: ignore
-    logger.debug("Binary modules found, running in binary mode")
-except ImportError as err:
-    logger.debug(err)
